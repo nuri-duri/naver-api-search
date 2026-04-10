@@ -238,31 +238,61 @@ tabs = st.tabs(["📉 데이터 프로파일링", "📊 트렌드 분석", "🛍
 
 # Tab 1: 데이터 프로파일링
 with tabs[0]:
-    st.subheader("📋 수집 데이터 현황 요약")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.write("**기초 통계량 (수치형)**")
-        st.dataframe(filtered_df.describe().T, use_container_width=True)
-    with col_b:
-        st.write("**플랫폼별 데이터 분포**")
-        df_dist = filtered_df['category_src'].value_counts().reset_index()
-        df_dist.columns = ['Platform', 'Count']
-        fig_dist = px.pie(df_dist, values='Count', names='Platform', hole=0.4, 
-                         color_discrete_sequence=px.colors.qualitative.Pastel)
-        st.plotly_chart(fig_dist, use_container_width=True)
+    st.markdown("### 📋 데이터 수집 현황 및 프로파일링")
     
-    st.markdown("---")
-    st.write("**실시간 수집 샘플 (TOP 20)**")
-    st.dataframe(filtered_df.head(20), use_container_width=True)
+    # [사진 가이드] 상단 메트릭 카드 3종
+    m_col1, m_col2, m_col3 = st.columns(3)
+    with m_col1:
+        st.metric("트렌드 데이터 수", f"{len(st.session_state.df_trend)}건")
+    with m_col2:
+        st.metric("검색/쇼핑 데이터 수", f"{len(filtered_df)}건")
+    with m_col3:
+        # 마지막 업데이트 시간에서 시간만 추출
+        up_time = st.session_state.update_time.split(" ")[1] if " " in st.session_state.update_time else st.session_state.update_time
+        st.metric("최종 업데이트", up_time)
+        
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    
+    # [사진 가이드] 데이터 요약 섹션 (좌: 트렌드, 우: 검색/쇼핑)
+    d_col1, d_col2 = st.columns([1, 1.2]) # 좌우 너비 비율 조정
+    
+    with d_col1:
+        st.markdown("#### 📉 트렌드 데이터 요약")
+        # 데이터 정리: 컬럼명 변경 및 선택
+        trend_summary = st.session_state.df_trend[['period', 'keyword', 'ratio']].copy()
+        trend_summary.columns = ['날짜', '키워드', '검색량']
+        trend_summary['날짜'] = trend_summary['날짜'].dt.strftime('%Y-%m-%d')
+        st.dataframe(trend_summary.head(100), use_container_width=True, height=450)
+        
+    with d_col2:
+        st.markdown("#### 🛍️ 검색/쇼핑 데이터 요약")
+        # 데이터 정리: 컬럼명 변경 및 선택
+        search_summary = filtered_df[['search_keyword', 'category_src', 'title']].copy()
+        search_summary.columns = ['키워드', '구분', '제목']
+        # 제목의 HTML 태그 제거 (정리)
+        search_summary['제목'] = search_summary['제목'].apply(lambda x: re.sub(r'<[^>]+>|&[^;]+;', '', str(x)))
+        st.dataframe(search_summary.head(100), use_container_width=True, height=450)
 
 # Tab 2: 트렌드 분석
 with tabs[1]:
-    st.subheader("📉 검색어 트렌드 추이")
+    st.markdown("### 📈 네이버 검색어 및 쇼핑 트렌드 통합 분석")
     fig_trend = px.line(st.session_state.df_trend, x='period', y='ratio', color='keyword',
-                       title="일일 검색량 상대 비율", markers=True,
+                       title="일별 검색 클릭 트렌드 (상대 수치)", markers=True,
                        color_discrete_sequence=px.colors.qualitative.Bold)
-    fig_trend.update_layout(plot_bgcolor="white", xaxis_gridcolor="#eee", yaxis_gridcolor="#eee")
+    fig_trend.update_layout(plot_bgcolor="white", xaxis_gridcolor="#eee", yaxis_gridcolor="#eee",
+                            xaxis_title="날짜", yaxis_title="검색량")
     st.plotly_chart(fig_trend, use_container_width=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # [사진 가이드] 통계 요약표 추가
+    st.markdown("### [통계 요약표]")
+    # 키워드별 통계 계산
+    trend_stats = st.session_state.df_trend.groupby('keyword')['ratio'].agg(['mean', 'max', 'min']).reset_index()
+    trend_stats.columns = ['키워드', 'mean', 'max', 'min']
+    # 소수점 정리 및 인덱스 설정
+    trend_stats = trend_stats.set_index('키워드')
+    st.dataframe(trend_stats.style.format("{:.4f}"), use_container_width=True)
     
     st.markdown("---")
     st.write("**📊 트렌드 상세 수치**")
@@ -270,69 +300,153 @@ with tabs[1]:
 
 # Tab 3: 쇼핑 상세
 with tabs[2]:
-    st.subheader("🛍️ 쇼핑 카테고리 입체 분석")
+    st.markdown("### 🛍️ 쇼핑 데이터 심층 분석")
     shop_data = filtered_df[filtered_df['category_src'] == 'shop'].copy()
+    
     if not shop_data.empty:
         col_c, col_d = st.columns(2)
-        with col_c:
-            st.write("**계층 구조 분석 (TreeMap)**")
-            fig_tree = px.treemap(shop_data, path=['search_keyword', 'category1', 'category2'], 
-                                 values='lprice', color='category1',
-                                 color_discrete_sequence=px.colors.qualitative.Vivid)
-            st.plotly_chart(fig_tree, use_container_width=True)
-        with col_d:
-            st.write("**비중 상세 분석 (Sunburst)**")
-            fig_sun = px.sunburst(shop_data, path=['category1', 'category2', 'search_keyword'],
-                                 color='category1', color_discrete_sequence=px.colors.qualitative.Vivid)
-            st.plotly_chart(fig_sun, use_container_width=True)
         
-        st.markdown("---")
-        st.write("**💰 쇼핑 데이터 요약**")
-        shop_sum = shop_data.groupby(['search_keyword', 'brand'])['lprice'].agg(['count', 'mean', 'max']).reset_index()
-        st.dataframe(shop_sum, use_container_width=True)
+        with col_c:
+            # [사진 가이드] 상품 최저가 분포 (Box Plot)
+            st.markdown("#### 상품 최저가 분포 (Box Plot)")
+            fig_box = px.box(shop_data, x='search_keyword', y='lprice', color='search_keyword',
+                            points='all', title=None,
+                            labels={'search_keyword': '키워드', 'lprice': '최저가'},
+                            color_discrete_sequence=px.colors.qualitative.Safe)
+            fig_box.update_layout(showlegend=False, plot_bgcolor="white", yaxis_gridcolor="#eee")
+            st.plotly_chart(fig_box, use_container_width=True)
+            
+        with col_d:
+            # [사진 가이드] 상위 브랜드별 평균가 및 등록 상품 수
+            st.markdown("#### 상위 브랜드별 평균가 및 등록 상품 수")
+            # 브랜드별 집계 (상위 15개)
+            brand_stats = shop_data.groupby('brand')['lprice'].agg(['mean', 'count']).reset_index()
+            brand_stats.columns = ['브랜드', '평균가', '상품수']
+            brand_stats = brand_stats.sort_values('평균가', ascending=True).tail(15)
+            
+            fig_brand = px.bar(brand_stats, x='평균가', y='브랜드', color='상품수',
+                              orientation='h', title=None,
+                              color_continuous_scale='Blues',
+                              labels={'평균가': '평균 가격', '브랜드': '브랜드명', '상품수': '등록 상품 수'})
+            fig_brand.update_layout(plot_bgcolor="white", xaxis_gridcolor="#eee")
+            st.plotly_chart(fig_brand, use_container_width=True)
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # [사진 가이드] 쇼핑 상세 데이터 테이블
+        st.markdown("### [쇼핑 상세 데이터]")
+        # 데이터 정리 및 한글 컬럼명 매핑
+        shop_display = shop_data[['search_keyword', 'title', 'lprice', 'brand', 'mallName', 'category1']].copy()
+        shop_display.columns = ['키워드', '제목', '최저가', '브랜드', '몰이름', '카테고리']
+        # 제목 클리닝
+        shop_display['제목'] = shop_display['제목'].apply(lambda x: re.sub(r'<[^>]+>|&[^;]+;', '', str(x)))
+        st.dataframe(shop_display, use_container_width=True, height=500)
     else:
-        st.warning("쇼핑 데이터가 존재하지 않습니다.")
+        st.warning("분석할 쇼핑 데이터가 존재하지 않습니다.")
 
 # Tab 4: 소셜 인사이트
 with tabs[3]:
-    st.subheader("💬 제목 텍스트 마이닝 인사이트")
-    all_titles = " ".join(filtered_df['title'].astype(str).tolist())
-    # 정규표현식 클리닝 (HTML 태그 및 기호 제거)
+    st.markdown("### 💬 소셜 미디어 인텔리전스 분석")
+    
+    # [사진 가이드] 상단 구성을 좌측 차트와 우측 리스트로 분할
+    s_col1, s_col2 = st.columns([1, 1.5])
+    
+    # 소셜 데이터 필터링 (blog, cafe, news)
+    social_df = filtered_df[filtered_df['category_src'].isin(['blog', 'cafe', 'news'])].copy()
+    
+    with s_col1:
+        # [사진 가이드] 채널별 게시물 점유율 (도넛 차트)
+        st.markdown("#### 채널별 게시물 점유율")
+        if not social_df.empty:
+            dist_data = social_df['category_src'].value_counts().reset_index()
+            dist_data.columns = ['구분', '게시물수']
+            fig_pie = px.pie(dist_data, values='게시물수', names='구분', hole=0.5,
+                            color_discrete_sequence=px.colors.qualitative.Pastel)
+            fig_pie.update_layout(showlegend=True)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("소셜 데이터가 부족합니다.")
+            
+    with s_col2:
+        # [사진 가이드] 최신 소셜 콘텐츠 리스트
+        st.markdown("#### 최신 소셜 콘텐츠 리스트")
+        if not social_df.empty:
+            # 콘텐츠 리스트 정리
+            display_social = social_df[['category_src', 'search_keyword', 'title', 'postdate', 'link']].copy()
+            # 네이버 API 날짜 데이터가 없으면 오늘 날짜 등으로 대체하거나 있는 컬럼명 확인 필요 (보통 postdate 또는 pubDate)
+            # 여기서는 postdate가 있다고 가정하고 정리
+            if 'postdate' in display_social.columns:
+                display_social.columns = ['구분', '키워드', '제목', '날짜', '링크']
+            elif 'pubDate' in display_social.columns:
+                display_social.columns = ['구분', '키워드', '제목', '날짜', '링크']
+            
+            # 제목 클리닝
+            display_social['제목'] = display_social['제목'].apply(lambda x: re.sub(r'<[^>]+>|&[^;]+;', '', str(x)))
+            st.dataframe(display_social.head(50), use_container_width=True, height=400)
+        else:
+            st.info("표시할 콘텐츠가 없습니다.")
+
+    st.markdown("---")
+    
+    # 기존 키워드 빈도 분석 (하단 배치 유지 및 고도화)
+    st.subheader("🔤 핵심 키워드 빈도 분석 (상위 30개)")
+    all_titles = " ".join(social_df['title'].astype(str).tolist())
     clean_text = re.sub(r'<[^>]+>|&[^;]+;|[^가-힣a-zA-Z0-9\s]', '', all_titles)
     words = [w for w in clean_text.split() if len(w) > 1]
-    stop_words = ["추천", "네이버", "쇼핑", "구매", "판매", "세트", "후기"] + target_keywords
-    final_words = [w for w in words if w not in stop_words]
+    stop_ws = ["추천", "네이버", "쇼핑", "구매", "판매", "세트", "후기"] + target_keywords
+    final_words = [w for w in words if w not in stop_ws]
     
-    word_counts = Counter(final_words).most_common(30)
-    if word_counts:
-        word_df = pd.DataFrame(word_counts, columns=['Keyword', 'Frequency'])
-        fig_word = px.bar(word_df, x='Frequency', y='Keyword', orientation='h',
-                         color='Frequency', color_continuous_scale='Greens',
-                         title="상위 30개 핵심 키워드 빈도")
-        fig_word.update_layout(yaxis={'categoryorder':'total ascending'})
-        st.plotly_chart(fig_word, use_container_width=True)
-        
-        st.markdown("---")
-        st.write("**🔤 키워드 빈도 상세**")
-        st.dataframe(word_df, use_container_width=True)
+    top_30 = Counter(final_words).most_common(30)
+    if top_30:
+        word_df = pd.DataFrame(top_30, columns=['단어', '빈도'])
+        fig_bar = px.bar(word_df, x='빈도', y='단어', orientation='h', 
+                        color='빈도', color_continuous_scale='Greens')
+        fig_bar.update_layout(yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_bar, use_container_width=True)
     else:
-        st.info("분석할 결과가 부족합니다.")
+        st.warning("키워드 분석을 위한 충분한 텍스트 데이터가 없습니다.")
 
 # Tab 5: 데이터 탐색
 with tabs[4]:
-    st.subheader("📂 엑스포트용 전체 데이터")
-    # Arrow 호환 타입 변환
+    st.markdown("### 📂 엑스포트용 통합 데이터 마켓")
+    st.write("분석에 사용된 전체 로우 데이터를 탐색하고 외부 파일로 추출할 수 있습니다.")
+    
+    # Arrow 호환 타입 변환 및 정리
     display_df = filtered_df.copy()
+    # 컬럼명 가독성 개선
+    display_df = display_df.rename(columns={
+        'category_src': '플랫폼',
+        'search_keyword': '검색어',
+        'title': '제목',
+        'lprice': '최저가',
+        'brand': '브랜드',
+        'mallName': '판매처',
+        'link': '링크'
+    })
+    
+    # 제목 내 HTML 태그 제거
+    display_df['제목'] = display_df['제목'].apply(lambda x: re.sub(r'<[^>]+>|&[^;]+;', '', str(x)))
+    
     for col in display_df.columns:
         if display_df[col].dtype == 'object': display_df[col] = display_df[col].astype(str)
     
+    # 데이터 프리뷰
     st.dataframe(display_df, height=600, use_container_width=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
-    csv = display_df.to_csv(index=False, encoding='utf-8-sig')
-    st.download_button("📥 전체 분석 데이터 다운로드 (CSV)", data=csv, 
-                       file_name=f"naver_market_intel_{datetime.now().strftime('%Y%j%H%M')}.csv",
-                       mime="text/csv", use_container_width=True)
+    # 다운로드 섹션 프리미엄 입히기
+    d_col1, d_col2 = st.columns([1, 1])
+    with d_col1:
+        st.info("💡 데이터 분석을 마쳤다면 아래 버튼을 눌러 로우 데이터를 저장하세요.")
+    with d_col2:
+        csv = display_df.to_csv(index=False, encoding='utf-8-sig')
+        st.download_button(
+            label="📥 엑셀용 데이터 다운로드 (CSV)",
+            data=csv,
+            file_name=f"naver_market_intel_full_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
 
 st.divider()
-st.caption("© 2026 Antigravity Data Lab | Powered by Naver Open API")
+st.caption("🍀 Naver Market Intelligence Dashboard | © 2026 Antigravity Data Lab")
