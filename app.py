@@ -149,17 +149,18 @@ st.sidebar.divider()  # 구분선 추가
 st.sidebar.subheader("🎯 데이터 세부 필터")  # 서브 헤더 추가
 df_search_raw = st.session_state.df_search.copy()  # 수집된 원본 데이터 복사
 
+# [핵심 수정] 가격(lprice) 컬럼을 수집 직후 전체 숫자형으로 일괄 변환 (TypeError 방지)
+df_search_raw['lprice'] = pd.to_numeric(df_search_raw['lprice'], errors='coerce').fillna(0)
+
 # 쇼핑 데이터 특화 필터
-shop_full = df_search_raw[df_search_raw['category'] == 'shop'].copy()  # 쇼핑 카테고리만 별도 추출
+shop_full = df_search_raw[df_search_raw['category'] == 'shop'].copy()  # 쇼핑 카테고리만 별도 추출 (이미 lprice는 숫자형)
 if not shop_full.empty:  # 쇼핑 데이터가 있을 경우
-    shop_full['lprice'] = pd.to_numeric(shop_full['lprice'], errors='coerce').fillna(0)  # 가격 문자열을 숫자로 변환
     max_p = int(shop_full['lprice'].max())  # 수집된 최고가 산출
     p_range = st.sidebar.slider("쇼핑 가격 필터 (원)", 0, max_p, (0, max_p))  # 가격 범위 슬라이더 제공
     brands = st.sidebar.multiselect("주요 브랜드 필터", options=shop_full['brand'].unique().tolist())  # 브랜드 선택 필터
     
-    # 필터 적용 로직
-    filtered_search = df_search_raw.copy()  # 필터링용 데이터프레임 복사
-    filtered_search.loc[filtered_search['category'] == 'shop', 'lprice'] = pd.to_numeric(filtered_search['lprice'], errors='coerce').fillna(0)  # 가격 수치화
+    # 필터 적용용 데이터프레임 (이미 lprice가 숫자형이므로 .loc 할당 불필요)
+    filtered_search = df_search_raw.copy()  
     
     # 필터링 조건 설정 (쇼핑 외 데이터는 유지하거나 가격/브랜드 필터링 적용)
     condition = (filtered_search['category'] != 'shop') | \
